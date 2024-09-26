@@ -1,9 +1,14 @@
 package com.android.interviewdemo.utils
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
-import android.view.View
+import android.provider.Settings
+import android.view.Window
+import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -13,12 +18,14 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
-internal object ComponentsUtils {
+internal object Utils {
 }
 
-fun Activity.registerOnBackPressedDispatcher(enabled: Boolean = true, onBackPressed: ()-> Unit) {
+fun Activity.registerOnBackPressedDispatcher(enabled: Boolean = true, onBackPressed: () -> Unit) {
     if (Build.VERSION.SDK_INT >= 33) {
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
             onBackPressed()
@@ -34,12 +41,6 @@ fun Activity.registerOnBackPressedDispatcher(enabled: Boolean = true, onBackPres
     }
 }
 
-fun <I, O> Activity.registerForActivityResult(
-    contract: ActivityResultContract<I, O>,
-    callback: ActivityResultCallback<O>
-) = (this as ComponentActivity).registerForActivityResult(contract, callback)
-
-
 fun ActivityResultLauncher<Intent>.launchFileChooser(
     type: String,
     title: String = "Choose file",
@@ -52,6 +53,16 @@ fun ActivityResultLauncher<Intent>.launchFileChooser(
     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multipleAllowed)
     launch(Intent.createChooser(intent, title))
 }
+
+/**
+ * Register activities result
+ * */
+
+fun <I, O> Activity.registerForActivityResult(
+    contract: ActivityResultContract<I, O>,
+    callback: ActivityResultCallback<O>
+) = (this as ComponentActivity).registerForActivityResult(contract, callback)
+
 
 fun Fragment.registerForActivityResult(callback: ((Int, Intent?) -> Unit)): ActivityResultLauncher<Intent> {
     return registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -82,7 +93,7 @@ fun AppCompatActivity.registerForActivityResultOnSuccess(callback: ((Intent) -> 
 }
 
 /**
- * for permissions requests
+ * Register permissions result
  * */
 fun Fragment.registerForPermissionResult(callback: ((Boolean) -> Unit)): ActivityResultLauncher<String> {
     return registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
@@ -97,10 +108,69 @@ fun AppCompatActivity.registerForPermissionResult(callback: ((Boolean) -> Unit))
 }
 
 
-fun AppCompatActivity.setLightStatusBar() {
-    // set light status bar text color (foreground color)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { //  set status text dark
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+/**
+ * Changes the foreground color of the status bars to light or dark so that the items on the bar
+ * can be read clearly.
+ *
+ * @param window Window that hosts the status bars
+ * @param isLight `true` to make the foreground color light
+ */
+fun setLightStatusBar(window: Window, isLight: Boolean) {
+    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+    insetsController.isAppearanceLightStatusBars = isLight
+}
+
+/**
+ * Changes the foreground color of the navigation bars to light or dark so that the items on the
+ * bar can be read clearly.
+ *
+ * @param window Window that hosts the status bars
+ * @param isLight `true` to make the foreground color light.
+ */
+fun setLightNavigationBar(window: Window, isLight: Boolean) {
+    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+    insetsController.isAppearanceLightNavigationBars = isLight
+}
+
+
+
+/**
+ * Helper extensions
+ * */
+
+fun Activity.requestPermission(permission: String, resultLauncher: ActivityResultLauncher<String>, onPermissionGranted: () -> Unit = {}) {
+    when {
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED -> { onPermissionGranted() }
+        shouldShowRequestPermissionRationale(permission) -> {
+            // permission denied permanently - showPermissionRationaleDialog()
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Permission Required")
+                .setMessage("This app requires certain permissions to function properly. Please grant all permissions.")
+                .setNegativeButton("No") { dialog, _ -> dialog.dismiss() }
+                .setPositiveButton("Yes") { _, _ ->
+                    // Request the permission after the user accepts the rationale
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        resultLauncher.launch(permission)
+                    } else {
+                        goToSettings()
+                    }
+                }.show()
+        }
+        else -> resultLauncher.launch(permission)
     }
-    window.statusBarColor = ContextCompat.getColor(this, android.R.color.white) // set status background white
+}
+
+fun Context.goToSettings() {
+    try {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.data = Uri.fromParts("package", packageName, null)
+        startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+fun Context.showToast(msg: String) {
+    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }
